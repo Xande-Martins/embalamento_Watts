@@ -230,7 +230,6 @@
 
                 return { CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
             }).filter(item => {
-                // Filtro para ignorar linhas vazias e remover os cabeçalhos flutuantes "CAS" e "PART"
                 const isValidData = item.CASE || item.PART || item.QTY;
                 const isHeaderCase = item.CASE.toUpperCase() === 'CAS' || item.CASE.toUpperCase() === 'CASE';
                 const isHeaderPart = item.PART.toUpperCase() === 'PART';
@@ -279,7 +278,11 @@
                 remessaTotals[item.Produto] = (remessaTotals[item.Produto] || 0) + item.Quantidade;
             });
 
-            let allCodes = Array.from(new Set([...Object.keys(packlistTotals), ...Object.keys(remessaTotals)])).sort();
+            let allCodes = Array.from(new Set([...Object.keys(packlistTotals), ...Object.keys(remessaTotals)])).sort((a, b) => {
+                let numA = parseFloat(a), numB = parseFloat(b);
+                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                return a.localeCompare(b);
+            });
 
             let matchesCount = 0;
             let diffsCount = 0;
@@ -323,6 +326,29 @@
             lucide.createIcons();
         }
 
+        function getConsolidatedCaseItems(caseNum) {
+            let caseItems = processedPacklist.filter(item => (item.CASE || 'Sem CASE') === String(caseNum));
+            let totalsMap = {};
+            
+            caseItems.forEach(item => {
+                if (!item.PART) return;
+                totalsMap[item.PART] = (totalsMap[item.PART] || 0) + item.QTY;
+            });
+
+            let consolidated = Object.keys(totalsMap).map(part => ({
+                PART: part,
+                QTY: totalsMap[part]
+            }));
+
+            consolidated.sort((a, b) => {
+                let numA = parseFloat(a.PART), numB = parseFloat(b.PART);
+                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                return a.PART.localeCompare(b.PART);
+            });
+
+            return consolidated;
+        }
+
         function copyCaseData(btn, caseNum, type) {
             const isCopied = btn.dataset.copied === 'true';
             const statusSpan = btn.querySelector('.status-txt');
@@ -335,7 +361,7 @@
                 return;
             }
 
-            const items = processedPacklist.filter(item => (item.CASE || 'Sem CASE') === String(caseNum));
+            let items = getConsolidatedCaseItems(caseNum);
             let textToCopy = '';
 
             if (type === 'codes') {
@@ -370,9 +396,8 @@
             let signatureCounts = {};
 
             Object.keys(caseGroups).forEach(caseNum => {
-                let items = caseGroups[caseNum];
-                let sortedItems = [...items].sort((a, b) => a.PART.localeCompare(b.PART));
-                let signature = sortedItems.map(i => `${i.PART}:${i.QTY}`).join('|');
+                let consolidatedItems = getConsolidatedCaseItems(caseNum);
+                let signature = consolidatedItems.map(i => `${i.PART}:${i.QTY}`).join('|');
                 
                 caseSignatures[caseNum] = signature;
                 signatureCounts[signature] = (signatureCounts[signature] || 0) + 1;
@@ -390,7 +415,7 @@
 
             const grid = document.getElementById('cases-grid');
             grid.innerHTML = Object.keys(caseGroups).sort().map(caseNum => {
-                let items = caseGroups[caseNum];
+                let items = getConsolidatedCaseItems(caseNum);
                 let totalQtyCase = items.reduce((sum, i) => sum + i.QTY, 0);
                 let signature = caseSignatures[caseNum];
                 let colorTheme = signatureColors[signature];
