@@ -163,15 +163,19 @@
             { bg: 'bg-sky-50', border: 'border-sky-500', headerBg: 'bg-sky-100', text: 'text-sky-800', badge: 'bg-sky-200 text-sky-800' }
         ];
 
-        // Parser Numérico de Alta Precisão (Trata separadores de milhar com ponto ou vírgula)
+        // Parser Numérico Industrial de Alta Precisão
         function parseNumber(val) {
             if (val === null || val === undefined || val === '') return 0;
-            if (typeof val === 'number') return val;
             
             let str = String(val).trim().replace(/\s+/g, '');
             if (!str) return 0;
 
-            // Caso 1: Possui ponto E vírgula (ex: "1.152,50" ou "1,152.50")
+            // 1. Números inteiros puros
+            if (/^\d+$/.test(str)) {
+                return parseInt(str, 10);
+            }
+
+            // 2. Possui ponto E vírgula (ex: "1.152,00" ou "1,152.00")
             if (str.includes('.') && str.includes(',')) {
                 let lastDot = str.lastIndexOf('.');
                 let lastComma = str.lastIndexOf(',');
@@ -181,27 +185,37 @@
                     str = str.replace(/,/g, '');
                 }
             } 
-            // Caso 2: Possui APENAS ponto (ex: "1.152" ou "1.5")
-            else if (str.includes('.')) {
-                let parts = str.split('.');
-                let isThousand = parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3);
-                if (isThousand) {
-                    str = str.replace(/\./g, '');
-                }
-            } 
-            // Caso 3: Possui APENAS vírgula (ex: "1,152" ou "1,5")
+            // 3. Possui APENAS vírgula (ex: "1,152" ou "1,5")
             else if (str.includes(',')) {
                 let parts = str.split(',');
-                let isThousand = parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3);
-                if (isThousand) {
+                // Se após a vírgula há exatamente 3 dígitos (ex: "1,152"), trata como separador de milhar
+                if (parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3)) {
                     str = str.replace(/,/g, '');
                 } else {
                     str = str.replace(',', '.');
                 }
+            } 
+            // 4. Possui APENAS ponto (ex: "1.152" ou "1.5")
+            else if (str.includes('.')) {
+                let parts = str.split('.');
+                // Se após o ponto há exatamente 3 dígitos (ex: "1.152"), trata como separador de milhar
+                if (parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3)) {
+                    str = str.replace(/\./g, '');
+                }
             }
 
             let num = parseFloat(str);
-            return isNaN(num) ? 0 : num;
+            if (isNaN(num)) return 0;
+
+            // 5. Proteção contra conversão float do Excel (ex: 1.152 vindo como float por incompatibilidade de locale)
+            if (!Number.isInteger(num)) {
+                let times1000 = Math.round(num * 1000);
+                if (Math.abs(num * 1000 - times1000) < 0.00001 && times1000 > 0) {
+                    num = times1000;
+                }
+            }
+
+            return num;
         }
 
         // Algoritmo de Ordenação Alfanumérica Padrão ERP (Alinhado 100% com SAP)
@@ -221,7 +235,7 @@
                 const workbook = XLSX.read(data, { type: 'array', raw: false });
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
 
                 if (type === 'packlist') {
                     processPacklist(jsonData);
