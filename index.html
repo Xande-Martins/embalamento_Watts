@@ -114,7 +114,7 @@
                 </button>
             </div>
 
-            <!-- TAB 1: Comparativo General -->
+            <!-- TAB 1: Comparativo Geral -->
             <div id="tab-comp" class="tab-content glass-card p-6">
                 <div class="flex justify-between items-center mb-4">
                     <div>
@@ -181,38 +181,13 @@
             return isNaN(num) ? 0 : num;
         }
 
-        // Algoritmo Sênior de Ordenação (Natural Sort com suporte a segmentos e zeros à esquerda)
+        // Algoritmo de Ordenação Alfanumérica Padrão ERP (Alinhado 100% com SAP)
         function sortCodes(a, b) {
             let strA = String(a).trim();
             let strB = String(b).trim();
             
-            let partsA = strA.split(/[\/\-]/);
-            let partsB = strB.split(/[\/\-]/);
-            
-            let maxLen = Math.max(partsA.length, partsB.length);
-            for (let i = 0; i < maxLen; i++) {
-                let pA = partsA[i] !== undefined ? partsA[i].trim() : '';
-                let pB = partsB[i] !== undefined ? partsB[i].trim() : '';
-                
-                let numA = parseFloat(pA);
-                let numB = parseFloat(pB);
-                
-                let isNumA = !isNaN(numA) && pA !== '';
-                let isNumB = !isNaN(numB) && pB !== '';
-                
-                if (isNumA && isNumB) {
-                    if (numA !== numB) return numA - numB;
-                } else if (isNumA && !isNumB) {
-                    return -1;
-                } else if (!isNumA && isNumB) {
-                    return 1;
-                } else {
-                    let cmp = pA.localeCompare(pB, 'pt-BR', { numeric: true, sensitivity: 'base' });
-                    if (cmp !== 0) return cmp;
-                }
-            }
-            
-            return strA.localeCompare(strB, 'pt-BR', { numeric: true, sensitivity: 'base' });
+            // Comparação alfanumérica pura caractere a caractere (Lexicográfica)
+            return strA.localeCompare(strB, 'pt-BR', { sensitivity: 'base' });
         }
 
         function handleFile(input, type) {
@@ -253,7 +228,7 @@
                 let rawQty = String(row[qtyKey] || '');
 
                 let cleanCase = rawCase.replace(/[EFef]/g, '').trim();
-                let cleanPart = rawPart.trim(); // Mantém zeros à esquerda originais
+                let cleanPart = rawPart.trim();
 
                 let cleanQtyStr = rawQty.trim();
                 if (cleanQtyStr.endsWith("000")) {
@@ -312,7 +287,7 @@
                 remessaTotals[item.Produto] = (remessaTotals[item.Produto] || 0) + item.Quantidade;
             });
 
-            let allCodes = Array.from(new Set([...Object.keys(packlistTotals), ...Object.keys(remessaTotals)])).sort((a, b) => sortCodes(a, b));
+            let allCodes = Array.from(new Set([...Object.keys(packlistTotals), ...Object.keys(remessaTotals)])).sort(sortCodes);
 
             let matchesCount = 0;
             let diffsCount = 0;
@@ -370,7 +345,7 @@
                 QTY: totalsMap[part]
             }));
 
-            // Aplica a ordenação correta estrita menor para o maior
+            // Ordena rigorosamente segundo o padrão alfanumérico do SAP
             consolidated.sort((a, b) => sortCodes(a.PART, b.PART));
 
             return consolidated;
@@ -400,6 +375,7 @@
                 }
             });
 
+            // Atualiza o comparativo e força a re-ordenação imediata dos cases
             renderComparison();
             renderCaseBreakdown();
         }
