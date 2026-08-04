@@ -163,6 +163,14 @@
             { bg: 'bg-sky-50', border: 'border-sky-500', headerBg: 'bg-sky-100', text: 'text-sky-800', badge: 'bg-sky-200 text-sky-800' }
         ];
 
+        // Regra para verificar se o código possui '/' e letra no final
+        function isCodeInvalid(code) {
+            if (!code) return false;
+            const str = String(code).trim();
+            // Retorna verdadeiro se NÃO contiver '/' seguido de uma letra no final
+            return !/\/[a-zA-Z]$/.test(str);
+        }
+
         function parseNumber(val) {
             if (val === null || val === undefined || val === '') return 0;
             if (typeof val === 'number') return val;
@@ -209,7 +217,7 @@
         }
 
         function processPacklist(data) {
-            processedPacklist = data.map(row => {
+            processedPacklist = data.map((row, index) => {
                 let caseKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'CASE') || 'CASE';
                 let partKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'PART') || 'PART';
                 let qtyKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'QTY' || k.trim().toUpperCase() === 'QUANTIDADE') || 'QTY';
@@ -228,7 +236,7 @@
                 
                 let cleanQty = parseNumber(cleanQtyStr);
 
-                return { CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
+                return { id: index, CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
             }).filter(item => {
                 const isValidData = item.CASE || item.PART || item.QTY;
                 const isHeaderCase = item.CASE.toUpperCase() === 'CAS' || item.CASE.toUpperCase() === 'CASE';
@@ -329,10 +337,12 @@
         function getConsolidatedCaseItems(caseNum) {
             let caseItems = processedPacklist.filter(item => (item.CASE || 'Sem CASE') === String(caseNum));
             let totalsMap = {};
+            let originalCodesMap = {}; // Guarda o mapeamento original caso seja editado
             
             caseItems.forEach(item => {
                 if (!item.PART) return;
                 totalsMap[item.PART] = (totalsMap[item.PART] || 0) + item.QTY;
+                originalCodesMap[item.PART] = item.PART;
             });
 
             let consolidated = Object.keys(totalsMap).map(part => ({
@@ -340,6 +350,7 @@
                 QTY: totalsMap[part]
             }));
 
+            // Reordena sempre do menor para o maior
             consolidated.sort((a, b) => {
                 let numA = parseFloat(a.PART), numB = parseFloat(b.PART);
                 if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
@@ -347,6 +358,23 @@
             });
 
             return consolidated;
+        }
+
+        // Função para atualizar o valor do produto manualmente
+        function updatePartCode(caseNum, oldPart, newPart) {
+            newPart = newPart.trim();
+            if (!newPart || newPart === oldPart) return;
+
+            // Atualiza no array principal
+            processedPacklist.forEach(item => {
+                if ((item.CASE || 'Sem CASE') === String(caseNum) && item.PART === oldPart) {
+                    item.PART = newPart;
+                }
+            });
+
+            // Recalcula visualizações e reordena
+            renderComparison();
+            renderCaseBreakdown();
         }
 
         function copyCaseData(btn, caseNum, type) {
@@ -420,12 +448,35 @@
                 let signature = caseSignatures[caseNum];
                 let colorTheme = signatureColors[signature];
 
-                let itemsList = items.map(i => `
-                    <div class="flex justify-between items-center text-xs py-1 border-b border-slate-100 last:border-0">
-                        <span class="font-mono text-slate-700 font-medium">${i.PART}</span>
-                        <span class="font-semibold text-slate-900">${i.QTY.toLocaleString('pt-BR')} un</span>
-                    </div>
-                `).join('');
+                let itemsList = items.map(i => {
+                    const isInvalid = isCodeInvalid(i.PART);
+                    
+                    if (isInvalid) {
+                        return `
+                            <div class="p-2 my-1 rounded bg-amber-50 border border-amber-300 text-xs space-y-1">
+                                <div class="flex justify-between items-center">
+                                    <span class="inline-flex items-center gap-1 font-semibold text-amber-800 text-[11px]">
+                                        <i data-lucide="alert-circle" class="w-3.5 h-3.5 text-amber-600"></i> Código Sem Sufixo
+                                    </span>
+                                    <span class="font-semibold text-slate-900">${i.QTY.toLocaleString('pt-BR')} un</span>
+                                </div>
+                                <div class="flex items-center gap-1.5 mt-1">
+                                    <input type="text" value="${i.PART}" 
+                                        onchange="updatePartCode('${caseNum}', '${i.PART}', this.value)"
+                                        class="w-full bg-white border border-amber-400 rounded px-2 py-0.5 text-xs font-mono font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        placeholder="Digite o código correto..." />
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <div class="flex justify-between items-center text-xs py-1 border-b border-slate-100 last:border-0">
+                            <span class="font-mono text-slate-700 font-medium">${i.PART}</span>
+                            <span class="font-semibold text-slate-900">${i.QTY.toLocaleString('pt-BR')} un</span>
+                        </div>
+                    `;
+                }).join('');
 
                 let cardClasses = "bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition";
                 let headerClasses = "flex justify-between items-center mb-2 pb-2 border-b border-slate-200";
@@ -464,7 +515,7 @@
                             <span class="${badgeClasses}">Total: ${totalQtyCase.toLocaleString('pt-BR')}</span>
                         </div>
                         ${copyButtonsHtml}
-                        <div class="space-y-1 max-h-40 overflow-y-auto pr-1">
+                        <div class="space-y-1 max-h-48 overflow-y-auto pr-1">
                             ${itemsList}
                         </div>
                     </div>
