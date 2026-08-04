@@ -163,62 +163,21 @@
             { bg: 'bg-sky-50', border: 'border-sky-500', headerBg: 'bg-sky-100', text: 'text-sky-800', badge: 'bg-sky-200 text-sky-800' }
         ];
 
-        // Parser Numérico Industrial de Alta Precisão
+        // Leitor Absoluto de Quantidades Inteiras de Embalamento
         function parseNumber(val) {
             if (val === null || val === undefined || val === '') return 0;
-            
+
             let str = String(val).trim().replace(/\s+/g, '');
             if (!str) return 0;
 
-            // 1. Números inteiros puros
-            if (/^\d+$/.test(str)) {
-                return parseInt(str, 10);
-            }
+            // Remove todos os caracteres não numéricos (pontos, vírgulas, espaços)
+            // Em listas de peças/caixas, as quantidades físicas são sempre números inteiros
+            let digitsOnly = str.replace(/[^\d]/g, '');
+            if (!digitsOnly) return 0;
 
-            // 2. Possui ponto E vírgula (ex: "1.152,00" ou "1,152.00")
-            if (str.includes('.') && str.includes(',')) {
-                let lastDot = str.lastIndexOf('.');
-                let lastComma = str.lastIndexOf(',');
-                if (lastComma > lastDot) {
-                    str = str.replace(/\./g, '').replace(',', '.');
-                } else {
-                    str = str.replace(/,/g, '');
-                }
-            } 
-            // 3. Possui APENAS vírgula (ex: "1,152" ou "1,5")
-            else if (str.includes(',')) {
-                let parts = str.split(',');
-                // Se após a vírgula há exatamente 3 dígitos (ex: "1,152"), trata como separador de milhar
-                if (parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3)) {
-                    str = str.replace(/,/g, '');
-                } else {
-                    str = str.replace(',', '.');
-                }
-            } 
-            // 4. Possui APENAS ponto (ex: "1.152" ou "1.5")
-            else if (str.includes('.')) {
-                let parts = str.split('.');
-                // Se após o ponto há exatamente 3 dígitos (ex: "1.152"), trata como separador de milhar
-                if (parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3)) {
-                    str = str.replace(/\./g, '');
-                }
-            }
-
-            let num = parseFloat(str);
-            if (isNaN(num)) return 0;
-
-            // 5. Proteção contra conversão float do Excel (ex: 1.152 vindo como float por incompatibilidade de locale)
-            if (!Number.isInteger(num)) {
-                let times1000 = Math.round(num * 1000);
-                if (Math.abs(num * 1000 - times1000) < 0.00001 && times1000 > 0) {
-                    num = times1000;
-                }
-            }
-
-            return num;
+            return parseInt(digitsOnly, 10);
         }
 
-        // Algoritmo de Ordenação Alfanumérica Padrão ERP (Alinhado 100% com SAP)
         function sortCodes(a, b) {
             let strA = String(a).trim();
             let strB = String(b).trim();
@@ -330,7 +289,7 @@
                 let remCodeDisplay = (code in remessaTotals) ? code : '<span class="text-slate-300">-</span>';
                 
                 let diff = packQty - remQty;
-                let isMatch = Math.abs(diff) < 0.0001 && (packQty > 0 || remQty > 0);
+                let isMatch = (diff === 0) && (packQty > 0 || remQty > 0);
 
                 if (isMatch) matchesCount++;
                 else diffsCount++;
