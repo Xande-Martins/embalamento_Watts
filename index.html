@@ -163,12 +163,11 @@
             { bg: 'bg-sky-50', border: 'border-sky-500', headerBg: 'bg-sky-100', text: 'text-sky-800', badge: 'bg-sky-200 text-sky-800' }
         ];
 
-        // Regra para verificar se o código possui '/' e letra no final
-        function isCodeInvalid(code) {
+        // Função para testar se o código possui a estrutura "/LETRA" no final
+        function isCodeMissingSlashLetter(code) {
             if (!code) return false;
-            const str = String(code).trim();
-            // Retorna verdadeiro se NÃO contiver '/' seguido de uma letra no final
-            return !/\/[a-zA-Z]$/.test(str);
+            // Valida se NÃO termina com '/' seguido de uma letra (A-Z ou a-z)
+            return !/\/[a-zA-Z]$/.test(String(code).trim());
         }
 
         function parseNumber(val) {
@@ -217,7 +216,7 @@
         }
 
         function processPacklist(data) {
-            processedPacklist = data.map((row, index) => {
+            processedPacklist = data.map(row => {
                 let caseKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'CASE') || 'CASE';
                 let partKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'PART') || 'PART';
                 let qtyKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'QTY' || k.trim().toUpperCase() === 'QUANTIDADE') || 'QTY';
@@ -236,7 +235,7 @@
                 
                 let cleanQty = parseNumber(cleanQtyStr);
 
-                return { id: index, CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
+                return { CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
             }).filter(item => {
                 const isValidData = item.CASE || item.PART || item.QTY;
                 const isHeaderCase = item.CASE.toUpperCase() === 'CAS' || item.CASE.toUpperCase() === 'CASE';
@@ -337,12 +336,10 @@
         function getConsolidatedCaseItems(caseNum) {
             let caseItems = processedPacklist.filter(item => (item.CASE || 'Sem CASE') === String(caseNum));
             let totalsMap = {};
-            let originalCodesMap = {}; // Guarda o mapeamento original caso seja editado
             
             caseItems.forEach(item => {
                 if (!item.PART) return;
                 totalsMap[item.PART] = (totalsMap[item.PART] || 0) + item.QTY;
-                originalCodesMap[item.PART] = item.PART;
             });
 
             let consolidated = Object.keys(totalsMap).map(part => ({
@@ -350,29 +347,29 @@
                 QTY: totalsMap[part]
             }));
 
-            // Reordena sempre do menor para o maior
+            // Ordena SEMPRE do menor para o maior
             consolidated.sort((a, b) => {
                 let numA = parseFloat(a.PART), numB = parseFloat(b.PART);
                 if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                return a.PART.localeCompare(b.PART);
+                return a.PART.localeCompare(b.PART, undefined, { numeric: true, sensitivity: 'base' });
             });
 
             return consolidated;
         }
 
-        // Função para atualizar o valor do produto manualmente
+        // Função responsável por atualizar o código no Packlist original e reordenar tudo
         function updatePartCode(caseNum, oldPart, newPart) {
             newPart = newPart.trim();
             if (!newPart || newPart === oldPart) return;
 
-            // Atualiza no array principal
+            // Atualiza na fonte original dos dados
             processedPacklist.forEach(item => {
                 if ((item.CASE || 'Sem CASE') === String(caseNum) && item.PART === oldPart) {
                     item.PART = newPart;
                 }
             });
 
-            // Recalcula visualizações e reordena
+            // Força a re-renderização de ambas as abas (já reordenando tudo do menor para o maior)
             renderComparison();
             renderCaseBreakdown();
         }
@@ -442,30 +439,31 @@
             });
 
             const grid = document.getElementById('cases-grid');
-            grid.innerHTML = Object.keys(caseGroups).sort().map(caseNum => {
+            grid.innerHTML = Object.keys(caseGroups).sort((a,b) => {
+                let numA = parseFloat(a), numB = parseFloat(b);
+                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                return a.localeCompare(b, undefined, { numeric: true });
+            }).map(caseNum => {
                 let items = getConsolidatedCaseItems(caseNum);
                 let totalQtyCase = items.reduce((sum, i) => sum + i.QTY, 0);
                 let signature = caseSignatures[caseNum];
                 let colorTheme = signatureColors[signature];
 
                 let itemsList = items.map(i => {
-                    const isInvalid = isCodeInvalid(i.PART);
+                    const isMissingSuffix = isCodeMissingSlashLetter(i.PART);
                     
-                    if (isInvalid) {
+                    if (isMissingSuffix) {
                         return `
-                            <div class="p-2 my-1 rounded bg-amber-50 border border-amber-300 text-xs space-y-1">
-                                <div class="flex justify-between items-center">
-                                    <span class="inline-flex items-center gap-1 font-semibold text-amber-800 text-[11px]">
-                                        <i data-lucide="alert-circle" class="w-3.5 h-3.5 text-amber-600"></i> Código Sem Sufixo
-                                    </span>
-                                    <span class="font-semibold text-slate-900">${i.QTY.toLocaleString('pt-BR')} un</span>
-                                </div>
-                                <div class="flex items-center gap-1.5 mt-1">
+                            <div class="flex items-center justify-between gap-2 py-1.5 px-2 bg-amber-50 border border-amber-300 rounded my-1">
+                                <div class="flex-1 flex items-center gap-1">
+                                    <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-600 flex-shrink-0" title="Código sem '/' e letra"></i>
                                     <input type="text" value="${i.PART}" 
                                         onchange="updatePartCode('${caseNum}', '${i.PART}', this.value)"
-                                        class="w-full bg-white border border-amber-400 rounded px-2 py-0.5 text-xs font-mono font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                        placeholder="Digite o código correto..." />
+                                        onkeydown="if(event.key==='Enter') updatePartCode('${caseNum}', '${i.PART}', this.value)"
+                                        class="w-full bg-amber-100/80 hover:bg-white focus:bg-white border border-amber-400 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-500 transition"
+                                        title="Altere o código e pressione Enter ou clique fora" />
                                 </div>
+                                <span class="font-semibold text-slate-900 text-xs flex-shrink-0">${i.QTY.toLocaleString('pt-BR')} un</span>
                             </div>
                         `;
                     }
