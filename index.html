@@ -163,20 +163,43 @@
             { bg: 'bg-sky-50', border: 'border-sky-500', headerBg: 'bg-sky-100', text: 'text-sky-800', badge: 'bg-sky-200 text-sky-800' }
         ];
 
+        // Parser Numérico de Alta Precisão (Trata separadores de milhar com ponto ou vírgula)
         function parseNumber(val) {
             if (val === null || val === undefined || val === '') return 0;
             if (typeof val === 'number') return val;
-            let str = String(val).trim();
-            if (str.includes('.') && !str.includes(',')) {
+            
+            let str = String(val).trim().replace(/\s+/g, '');
+            if (!str) return 0;
+
+            // Caso 1: Possui ponto E vírgula (ex: "1.152,50" ou "1,152.50")
+            if (str.includes('.') && str.includes(',')) {
+                let lastDot = str.lastIndexOf('.');
+                let lastComma = str.lastIndexOf(',');
+                if (lastComma > lastDot) {
+                    str = str.replace(/\./g, '').replace(',', '.');
+                } else {
+                    str = str.replace(/,/g, '');
+                }
+            } 
+            // Caso 2: Possui APENAS ponto (ex: "1.152" ou "1.5")
+            else if (str.includes('.')) {
                 let parts = str.split('.');
-                if (parts.length > 1 && parts.every((p, idx) => idx === 0 || p.length === 3)) {
+                let isThousand = parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3);
+                if (isThousand) {
                     str = str.replace(/\./g, '');
                 }
-            } else if (str.includes('.') && str.includes(',')) {
-                str = str.replace(/\./g, '').replace(',', '.');
-            } else if (str.includes(',')) {
-                str = str.replace(',', '.');
+            } 
+            // Caso 3: Possui APENAS vírgula (ex: "1,152" ou "1,5")
+            else if (str.includes(',')) {
+                let parts = str.split(',');
+                let isThousand = parts.length > 1 && parts[0].length <= 3 && parts.slice(1).every(p => p.length === 3);
+                if (isThousand) {
+                    str = str.replace(/,/g, '');
+                } else {
+                    str = str.replace(',', '.');
+                }
             }
+
             let num = parseFloat(str);
             return isNaN(num) ? 0 : num;
         }
@@ -185,8 +208,6 @@
         function sortCodes(a, b) {
             let strA = String(a).trim();
             let strB = String(b).trim();
-            
-            // Comparação alfanumérica pura caractere a caractere (Lexicográfica)
             return strA.localeCompare(strB, 'pt-BR', { sensitivity: 'base' });
         }
 
@@ -225,17 +246,11 @@
 
                 let rawCase = String(row[caseKey] || '');
                 let rawPart = String(row[partKey] || '');
-                let rawQty = String(row[qtyKey] || '');
+                let rawQty = row[qtyKey];
 
                 let cleanCase = rawCase.replace(/[EFef]/g, '').trim();
                 let cleanPart = rawPart.trim();
-
-                let cleanQtyStr = rawQty.trim();
-                if (cleanQtyStr.endsWith("000")) {
-                    cleanQtyStr = cleanQtyStr.slice(0, -3);
-                }
-                
-                let cleanQty = parseNumber(cleanQtyStr);
+                let cleanQty = parseNumber(rawQty);
 
                 return { id: 'item_' + index, CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
             }).filter(item => {
@@ -345,7 +360,6 @@
                 QTY: totalsMap[part]
             }));
 
-            // Ordena rigorosamente segundo o padrão alfanumérico do SAP
             consolidated.sort((a, b) => sortCodes(a.PART, b.PART));
 
             return consolidated;
@@ -375,7 +389,6 @@
                 }
             });
 
-            // Atualiza o comparativo e força a re-ordenação imediata dos cases
             renderComparison();
             renderCaseBreakdown();
         }
