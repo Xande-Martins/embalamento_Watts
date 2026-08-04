@@ -225,6 +225,14 @@
                 let cleanPart = rawPart.trim();
                 let cleanQty = parseNumber(rawQty);
 
+                // --- INÍCIO DA CORREÇÃO ---
+                // Se a quantidade limpa terminar com três zeros (ex: 200010000), removemos os 3 últimos zeros.
+                let strQty = String(cleanQty);
+                if (strQty.endsWith('000')) {
+                    cleanQty = parseInt(strQty.slice(0, -3), 10) || 0;
+                }
+                // --- FIM DA CORREÇÃO ---
+
                 return { id: 'item_' + index, CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
             }).filter(item => {
                 const isValidData = item.CASE || item.PART || item.QTY;
