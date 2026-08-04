@@ -163,12 +163,6 @@
             { bg: 'bg-sky-50', border: 'border-sky-500', headerBg: 'bg-sky-100', text: 'text-sky-800', badge: 'bg-sky-200 text-sky-800' }
         ];
 
-        // Regra estrita: Verifica se o código NÃO possui a barra '/'
-        function hasNoSlash(code) {
-            if (!code) return false;
-            return !String(code).includes('/');
-        }
-
         function parseNumber(val) {
             if (val === null || val === undefined || val === '') return 0;
             if (typeof val === 'number') return val;
@@ -185,6 +179,16 @@
             }
             let num = parseFloat(str);
             return isNaN(num) ? 0 : num;
+        }
+
+        // Função de ordenação numérica preservando os zeros à esquerda visualmente
+        function sortCodes(a, b) {
+            let cleanA = String(a).trim();
+            let cleanB = String(b).trim();
+            let numA = parseFloat(cleanA);
+            let numB = parseFloat(cleanB);
+            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+            return cleanA.localeCompare(cleanB);
         }
 
         function handleFile(input, type) {
@@ -215,7 +219,7 @@
         }
 
         function processPacklist(data) {
-            processedPacklist = data.map(row => {
+            processedPacklist = data.map((row, index) => {
                 let caseKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'CASE') || 'CASE';
                 let partKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'PART') || 'PART';
                 let qtyKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'QTY' || k.trim().toUpperCase() === 'QUANTIDADE') || 'QTY';
@@ -225,7 +229,9 @@
                 let rawQty = String(row[qtyKey] || '');
 
                 let cleanCase = rawCase.replace(/[EFef]/g, '').trim();
-                let cleanPart = rawPart.replace(/\s+/g, '').trim();
+                
+                // Mantém os zeros à esquerda originais do código (string)
+                let cleanPart = rawPart.trim();
 
                 let cleanQtyStr = rawQty.trim();
                 if (cleanQtyStr.endsWith("000")) {
@@ -234,7 +240,7 @@
                 
                 let cleanQty = parseNumber(cleanQtyStr);
 
-                return { CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
+                return { id: 'item_' + index, CASE: cleanCase, PART: cleanPart, QTY: cleanQty };
             }).filter(item => {
                 const isValidData = item.CASE || item.PART || item.QTY;
                 const isHeaderCase = item.CASE.toUpperCase() === 'CAS' || item.CASE.toUpperCase() === 'CASE';
@@ -252,7 +258,7 @@
                 let rawProd = String(row[prodKey] || '');
                 let rawQty = row[qtyKey];
 
-                let cleanProd = rawProd.replace(/\s+/g, '').trim();
+                let cleanProd = rawProd.trim();
                 let cleanQty = parseNumber(rawQty);
 
                 return { Produto: cleanProd, Quantidade: cleanQty };
@@ -284,11 +290,7 @@
                 remessaTotals[item.Produto] = (remessaTotals[item.Produto] || 0) + item.Quantidade;
             });
 
-            let allCodes = Array.from(new Set([...Object.keys(packlistTotals), ...Object.keys(remessaTotals)])).sort((a, b) => {
-                let numA = parseFloat(a), numB = parseFloat(b);
-                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                return a.localeCompare(b);
-            });
+            let allCodes = Array.from(new Set([...Object.keys(packlistTotals), ...Object.keys(remessaTotals)])).sort((a, b) => sortCodes(a, b));
 
             let matchesCount = 0;
             let diffsCount = 0;
@@ -346,28 +348,37 @@
                 QTY: totalsMap[part]
             }));
 
-            // Ordena os itens do menor para o maior
-            consolidated.sort((a, b) => {
-                let numA = parseFloat(a.PART), numB = parseFloat(b.PART);
-                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                return a.PART.localeCompare(b.PART, undefined, { numeric: true, sensitivity: 'base' });
-            });
+            // Ordena numericamente mantendo os zeros à esquerda na exibição
+            consolidated.sort((a, b) => sortCodes(a.PART, b.PART));
 
             return consolidated;
         }
 
-        function updatePartCode(caseNum, oldPart, newPart) {
-            newPart = newPart.trim();
-            if (!newPart || newPart === oldPart) return;
+        function enableEditPart(element, itemId, currentPart) {
+            const container = element.parentElement;
+            container.innerHTML = `
+                <div class="flex items-center gap-1 w-full">
+                    <input type="text" id="input-${itemId}" value="${currentPart}" 
+                           class="w-full text-xs font-mono px-2 py-1 bg-white border border-amber-400 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-inner"
+                           onblur="saveEditedPart('${itemId}', this.value)"
+                           onkeydown="if(event.key === 'Enter') { this.blur(); }">
+                </div>
+            `;
+            const inputEl = document.getElementById(`input-${itemId}`);
+            inputEl.focus();
+            inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+        }
 
-            // Atualiza na fonte original dos dados
+        function saveEditedPart(itemId, newValue) {
+            // Preserva os zeros à esquerda inseridos pelo usuário, removendo apenas espaços em branco externos
+            let cleanNewVal = newValue.trim();
+            
             processedPacklist.forEach(item => {
-                if ((item.CASE || 'Sem CASE') === String(caseNum) && item.PART === oldPart) {
-                    item.PART = newPart;
+                if (item.id === itemId) {
+                    item.PART = cleanNewVal;
                 }
             });
 
-            // Atualiza interface e aplica a reordenação
             renderComparison();
             renderCaseBreakdown();
         }
@@ -437,40 +448,22 @@
             });
 
             const grid = document.getElementById('cases-grid');
-            grid.innerHTML = Object.keys(caseGroups).sort((a,b) => {
-                let numA = parseFloat(a), numB = parseFloat(b);
-                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                return a.localeCompare(b, undefined, { numeric: true });
-            }).map(caseNum => {
+            grid.innerHTML = Object.keys(caseGroups).sort(sortCodes).map(caseNum => {
+                let rawCaseItems = processedPacklist.filter(item => (item.CASE || 'Sem CASE') === String(caseNum));
                 let items = getConsolidatedCaseItems(caseNum);
                 let totalQtyCase = items.reduce((sum, i) => sum + i.QTY, 0);
                 let signature = caseSignatures[caseNum];
                 let colorTheme = signatureColors[signature];
 
                 let itemsList = items.map(i => {
-                    const editable = hasNoSlash(i.PART);
-                    
-                    // Se NÃO possui '/', renderiza o campo editável
-                    if (editable) {
-                        return `
-                            <div class="flex items-center justify-between gap-2 py-1 px-1 bg-amber-50 border border-amber-300 rounded my-1">
-                                <div class="flex-1 flex items-center gap-1">
-                                    <i data-lucide="edit-3" class="w-3.5 h-3.5 text-amber-600 flex-shrink-0" title="Código sem '/' - Editável"></i>
-                                    <input type="text" value="${i.PART}" 
-                                        onchange="updatePartCode('${caseNum}', '${i.PART}', this.value)"
-                                        onkeydown="if(event.key==='Enter') updatePartCode('${caseNum}', '${i.PART}', this.value)"
-                                        class="w-full bg-amber-100 hover:bg-white focus:bg-white border border-amber-400 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-500 transition"
-                                        title="Altere o código e pressione Enter ou clique fora" />
-                                </div>
-                                <span class="font-semibold text-slate-900 text-xs flex-shrink-0">${i.QTY.toLocaleString('pt-BR')} un</span>
-                            </div>
-                        `;
-                    }
+                    let matchOriginal = rawCaseItems.find(r => r.PART === i.PART);
+                    let targetId = matchOriginal ? matchOriginal.id : (rawCaseItems[0] ? rawCaseItems[0].id : '');
 
-                    // Se JÁ possui '/', renderiza como texto normal
                     return `
-                        <div class="flex justify-between items-center text-xs py-1 border-b border-slate-100 last:border-0">
-                            <span class="font-mono text-slate-700 font-medium">${i.PART}</span>
+                        <div class="flex justify-between items-center text-xs py-1 border-b border-slate-100 last:border-0 group">
+                            <span class="font-mono text-slate-700 font-medium cursor-pointer hover:text-blue-600 flex items-center gap-1" title="Clique para editar" onclick="enableEditPart(this, '${targetId}', '${i.PART}')">
+                                <i data-lucide="edit-3" class="w-3 h-3 text-slate-400 group-hover:text-blue-500"></i> ${i.PART}
+                            </span>
                             <span class="font-semibold text-slate-900">${i.QTY.toLocaleString('pt-BR')} un</span>
                         </div>
                     `;
@@ -496,7 +489,7 @@
                                 class="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded border border-slate-300 transition text-[11px] flex items-center justify-center gap-1">
                             <i data-lucide="copy" class="w-3 h-3"></i> Cód: <span class="status-txt font-bold">COPIAR</span>
                         </button>
-                        <button onclick="copyCaseData(this, '${caseNum}', 'qty')" data-copied="false"
+                        <button onclick="copyCaseData(this, '` + caseNum + `', 'qty')" data-copied="false"
                                 class="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded border border-slate-300 transition text-[11px] flex items-center justify-center gap-1">
                             <i data-lucide="copy" class="w-3 h-3"></i> QTY: <span class="status-txt font-bold">COPIAR</span>
                         </button>
@@ -513,7 +506,7 @@
                             <span class="${badgeClasses}">Total: ${totalQtyCase.toLocaleString('pt-BR')}</span>
                         </div>
                         ${copyButtonsHtml}
-                        <div class="space-y-1 max-h-48 overflow-y-auto pr-1">
+                        <div class="space-y-1 max-h-40 overflow-y-auto pr-1">
                             ${itemsList}
                         </div>
                     </div>
